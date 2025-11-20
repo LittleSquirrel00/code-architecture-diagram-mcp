@@ -149,7 +149,7 @@ function buildFileGraph(files, filePathMap, edgeTypes = ['import']) {
 }
 /**
  * Build hierarchy graph (module or component level)
- * Phase 2: Returns both parent nodes (modules/components) AND file nodes with parent refs
+ * Returns only parent nodes (modules/components) with aggregated edges
  */
 function buildHierarchyGraph(files, filePathMap, level) {
     const nodes = new Map();
@@ -231,8 +231,10 @@ function buildHierarchyGraph(files, filePathMap, level) {
     const fileCount = files.length;
     const edgeCount = edges.size;
     console.log(`[GraphBuilder] Aggregated ${fileCount} files into ${nodeCount} ${level} nodes with ${edgeCount} edges`);
+    // Return only parent nodes (modules/components), not file nodes
+    // This provides a clean hierarchical view at the requested level
     return {
-        nodes: Array.from(nodes.values()),
+        nodes: Array.from(parentNodes.values()),
         edges: Array.from(edges.values()),
     };
 }
