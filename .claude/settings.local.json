@@ -1,0 +1,17 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(openspec list)",
+      "Bash(openspec list --specs)",
+      "SlashCommand(/openspec:proposal)",
+      "Bash(openspec validate add-file-dependency-graph-mvp --strict)",
+      "Bash(npm run build)",
+      "Bash(npm install)",
+      "Bash(npm test -- __tests__/types.test.ts)",
+      "Bash(npm test -- __tests__/parser.test.ts)",
+      "Bash(npm test -- __tests__/builder.test.ts)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}
