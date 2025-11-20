@@ -117,11 +117,21 @@ export interface Graph {
     edges: Edge[];
 }
 /**
+ * Hierarchy information for a file (Phase 2)
+ */
+export interface HierarchyInfo {
+    level: 'module' | 'component' | 'file';
+    parent?: string;
+}
+/**
  * Parsed file information (internal use)
  */
 export interface ParsedFile {
     path: string;
     imports: ImportInfo[];
+    implements?: ImplementInfo[];
+    renders?: RenderInfo[];
+    hierarchy?: HierarchyInfo;
 }
 /**
  * Import information extracted from a file
@@ -132,9 +142,34 @@ export interface ImportInfo {
     isDynamic: boolean;
 }
 /**
- * Options for getDependencyGraph (Phase 1: minimal)
- * Future phases will extend this interface
+ * Implement information extracted from a file (Phase 3)
+ * Represents a class implementing one or more interfaces
+ */
+export interface ImplementInfo {
+    className: string;
+    interfaces: string[];
+    interfacePaths: Map<string, string>;
+}
+/**
+ * Render information extracted from a file (Phase 4)
+ * Represents a component being rendered in JSX
+ */
+export interface RenderInfo {
+    componentName: string;
+    position: number;
+    isNamespaced: boolean;
+}
+/**
+ * Edge type for filtering
+ * Phase 3: import, implement
+ * Phase 4+: render
+ */
+export type EdgeType = 'import' | 'implement' | 'render';
+/**
+ * Options for getDependencyGraph
  */
 export interface GetDependencyGraphOptions {
+    level?: 'file' | 'component' | 'module';
+    edgeTypes?: EdgeType[];
 }
 //# sourceMappingURL=types.d.ts.map

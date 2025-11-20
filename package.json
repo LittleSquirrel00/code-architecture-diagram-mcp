@@ -1,7 +1,7 @@
 {
   "name": "code-architecture-diagram-mcp",
   "version": "0.1.0",
-  "description": "Code architecture dependency graph parser with MCP interface",
+  "description": "Multi-level code architecture dependency graph analyzer with MCP interface - supports file, module, and component-level views",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -19,7 +19,10 @@
     "dependency-graph",
     "architecture",
     "mcp",
-    "code-analysis"
+    "code-analysis",
+    "hierarchical",
+    "module-analysis",
+    "component-analysis"
   ],
   "author": "",
   "license": "MIT",

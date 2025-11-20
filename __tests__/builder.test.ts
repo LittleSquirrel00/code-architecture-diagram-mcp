@@ -28,38 +28,66 @@ describe('Graph Builder', () => {
 
   describe('resolveImportPath', () => {
     test('should resolve relative imports', () => {
+      const filePathMap = new Map([
+        ['/project/src/utils.ts', '/project/src/utils.ts'],
+        ['/project/src/utils', '/project/src/utils.ts'],
+      ])
       const result = resolveImportPath(
         '/project/src/index.ts',
-        './utils'
+        './utils',
+        filePathMap
       )
-      expect(result).toContain('utils')
+      expect(result).toBe('/project/src/utils.ts')
     })
 
     test('should resolve parent directory imports', () => {
+      const filePathMap = new Map([
+        ['/project/src/models/User.ts', '/project/src/models/User.ts'],
+        ['/project/src/models/User', '/project/src/models/User.ts'],
+      ])
       const result = resolveImportPath(
         '/project/src/auth/login.ts',
-        '../models/User'
+        '../models/User',
+        filePathMap
       )
-      expect(result).toContain('models')
-      expect(result).toContain('User')
+      expect(result).toBe('/project/src/models/User.ts')
     })
 
     test('should skip external packages', () => {
+      const filePathMap = new Map()
       const result = resolveImportPath(
         '/project/src/index.ts',
-        'react'
+        'react',
+        filePathMap
       )
       expect(result).toBeNull()
     })
 
     test('should handle extension-less imports', () => {
+      const filePathMap = new Map([
+        ['/project/src/utils.ts', '/project/src/utils.ts'],
+        ['/project/src/utils', '/project/src/utils.ts'],
+      ])
       const result = resolveImportPath(
         '/project/src/index.ts',
-        './utils'
+        './utils',
+        filePathMap
       )
-      expect(result).toBeTruthy()
-      // Should try .ts extension
-      expect(result).toContain('utils')
+      expect(result).toBe('/project/src/utils.ts')
+    })
+
+    test('should handle .js imports for .ts files', () => {
+      const filePathMap = new Map([
+        ['/project/src/utils.ts', '/project/src/utils.ts'],
+        ['/project/src/utils', '/project/src/utils.ts'],
+        ['/project/src/utils.js', '/project/src/utils.ts'],
+      ])
+      const result = resolveImportPath(
+        '/project/src/index.ts',
+        './utils.js',
+        filePathMap
+      )
+      expect(result).toBe('/project/src/utils.ts')
     })
   })
 

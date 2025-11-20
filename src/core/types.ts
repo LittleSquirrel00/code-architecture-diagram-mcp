@@ -134,11 +134,22 @@ export interface Graph {
 }
 
 /**
+ * Hierarchy information for a file (Phase 2)
+ */
+export interface HierarchyInfo {
+  level: 'module' | 'component' | 'file'
+  parent?: string // Relative path to parent (e.g., 'src/modules/auth')
+}
+
+/**
  * Parsed file information (internal use)
  */
 export interface ParsedFile {
   path: string
   imports: ImportInfo[]
+  implements?: ImplementInfo[] // Phase 3: Optional interface implementations
+  renders?: RenderInfo[]       // Phase 4: Optional component renders
+  hierarchy?: HierarchyInfo    // Phase 2: Optional hierarchy metadata
 }
 
 /**
@@ -151,15 +162,41 @@ export interface ImportInfo {
 }
 
 /**
- * Options for getDependencyGraph (Phase 1: minimal)
- * Future phases will extend this interface
+ * Implement information extracted from a file (Phase 3)
+ * Represents a class implementing one or more interfaces
+ */
+export interface ImplementInfo {
+  className: string                      // Name of the implementing class
+  interfaces: string[]                   // Interface names being implemented
+  interfacePaths: Map<string, string>    // Interface name → import path mapping
+}
+
+/**
+ * Render information extracted from a file (Phase 4)
+ * Represents a component being rendered in JSX
+ */
+export interface RenderInfo {
+  componentName: string    // Name used in JSX: "Header" or "UI.Button"
+  position: number         // Rendering position: 0, 1, 2...
+  isNamespaced: boolean    // true for "UI.Button", false for "Header"
+}
+
+/**
+ * Edge type for filtering
+ * Phase 3: import, implement
+ * Phase 4+: render
+ */
+export type EdgeType = 'import' | 'implement' | 'render'
+
+/**
+ * Options for getDependencyGraph
  */
 export interface GetDependencyGraphOptions {
-  // Phase 1: No options (always file-level, global view, import edges only)
-  // Phase 2: level?: 'module' | 'component' | 'file'
-  // Phase 3: edgeTypes?: ('import' | 'implement' | 'use')[]
-  // Phase 4: edgeTypes?: ('import' | 'render' | 'implement' | 'use')[]
-  // Phase 6: mode?: 'global' | 'focused' | 'neighbors'
-  //          focusPath?: string
-  //          neighborDepth?: number
+  // Phase 2: Hierarchy level support
+  level?: 'file' | 'component' | 'module' // Default: 'file' (backward compatible)
+  // Phase 3: Edge type filtering
+  edgeTypes?: EdgeType[] // Default: ['import'] (backward compatible)
+  // Phase 4: + 'render'
+  // Phase 5: diff?: boolean
+  // Phase 6: view?: 'global' | 'focused' | 'neighbors', focusPath?: string
 }

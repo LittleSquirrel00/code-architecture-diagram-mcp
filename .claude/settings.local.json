@@ -1,15 +1,26 @@
 {
   "permissions": {
     "allow": [
-      "Bash(openspec list)",
-      "Bash(openspec list --specs)",
-      "SlashCommand(/openspec:proposal)",
-      "Bash(openspec validate add-file-dependency-graph-mvp --strict)",
-      "Bash(npm run build)",
-      "Bash(npm install)",
-      "Bash(npm test -- __tests__/types.test.ts)",
-      "Bash(npm test -- __tests__/parser.test.ts)",
-      "Bash(npm test -- __tests__/builder.test.ts)"
+      "Bash(npm test -- __tests__/implement-detection.test.ts --no-coverage)",
+      "Bash(npm test -- __tests__/mermaid-implement.test.ts --no-coverage)",
+      "Bash(openspec archive add-implement-edge-tracking --yes)",
+      "Bash(openspec init add-render-edge-tracking)",
+      "Bash(openspec validate add-render-edge-tracking --strict)",
+      "Bash(openspec show add-render-edge-tracking --json --deltas-only)",
+      "Bash(cat openspec/changes/add-render-edge-tracking/proposal.md)",
+      "Bash(npm test -- __tests__/render-detection.test.ts)",
+      "Bash(npm test -- __tests__/render-detection.test.ts --no-coverage)",
+      "Bash(chmod +x debug-jsx.mjs)",
+      "Bash(node debug-jsx.mjs)",
+      "Bash(node /Users/zhangfeng144/Git/code-architecture-diagram-mcp/debug-ast.mjs)",
+      "Bash(node /Users/zhangfeng144/Git/code-architecture-diagram-mcp/debug-jsx.mjs)",
+      "Bash(node /Users/zhangfeng144/Git/code-architecture-diagram-mcp/debug-render-edges.mjs)",
+      "Bash(npm test -- __tests__/render-edge-builder.test.ts --no-coverage)",
+      "Bash(npm test -- __tests__/mermaid-render.test.ts --no-coverage)",
+      "Bash(node /Users/zhangfeng144/Git/code-architecture-diagram-mcp/demo-render-visualization.mjs)",
+      "Bash(npm test -- __tests__/integration-render.test.ts --no-coverage)",
+      "Bash(npm test -- __tests__/parser.test.ts --no-coverage)",
+      "Bash(node /Users/zhangfeng144/Git/code-architecture-diagram-mcp/demo-phase4-complete.mjs)"
     ],
     "deny": [],
     "ask": []
