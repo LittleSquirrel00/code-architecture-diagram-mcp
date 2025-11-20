@@ -12,37 +12,51 @@ import type { ParsedFile, ImportInfo, ImplementInfo, RenderInfo } from '../core/
 import { detectHierarchy } from './hierarchy-detector.js'
 
 /**
- * Initialize tree-sitter parser with TypeScript grammar
+ * Create dedicated TypeScript parser (immutable language setting)
  */
-export function createParser(): Parser {
+function createTSParser(): Parser {
   const parser = new Parser()
   parser.setLanguage(TypeScript.typescript)
   return parser
 }
 
 /**
+ * Create dedicated TSX parser (immutable language setting)
+ */
+function createTSXParser(): Parser {
+  const parser = new Parser()
+  parser.setLanguage(TypeScript.tsx)
+  return parser
+}
+
+/**
+ * Initialize tree-sitter parser with TypeScript grammar
+ * @deprecated Use internal createTSParser/createTSXParser instead
+ */
+export function createParser(): Parser {
+  return createTSParser()
+}
+
+/**
  * Parse a single file to extract import information
  *
  * @param filePath - Absolute path to the file
- * @param parser - tree-sitter parser instance
+ * @param _unusedParser - DEPRECATED: parser parameter is no longer used, kept for backward compatibility
  * @returns Parsed file with imports, or null if parsing fails
  */
 export async function parseFile(
   filePath: string,
-  parser: Parser
+  _unusedParser?: Parser
 ): Promise<ParsedFile | null> {
   try {
     const content = await fs.readFile(filePath, 'utf-8')
 
-    // Use TSX grammar for .tsx/.jsx files to support JSX syntax
+    // Always create appropriate parser based on file type to avoid state conflicts
+    // The parser parameter is ignored to ensure correctness
     const isTSXFile = filePath.endsWith('.tsx') || filePath.endsWith('.jsx')
-    if (isTSXFile) {
-      parser.setLanguage(TypeScript.tsx)
-    } else {
-      parser.setLanguage(TypeScript.typescript)
-    }
+    const fileParser = isTSXFile ? createTSXParser() : createTSParser()
 
-    const tree = parser.parse(content)
+    const tree = fileParser.parse(content)
     const imports = extractImports(tree.rootNode)
 
     // Phase 2: Detect hierarchy from file path
@@ -514,13 +528,13 @@ function buildComponentImportMap(rootNode: Parser.SyntaxNode): Map<string, strin
  * @returns Array of parsed files
  */
 export async function parseProject(projectPath: string): Promise<ParsedFile[]> {
-  const parser = createParser()
   const files = await findSourceFiles(projectPath)
 
   console.log(`[Parser] Found ${files.length} source files`)
 
+  // Parse files with individual parser instances to avoid state conflicts
   const results = await Promise.all(
-    files.map((file) => parseFile(file, parser))
+    files.map((file) => parseFile(file))
   )
 
   return results.filter((r): r is ParsedFile => r !== null)

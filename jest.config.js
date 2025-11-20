@@ -17,4 +17,10 @@ export default {
   testMatch: ['**/__tests__/**/*.test.ts'],
   collectCoverageFrom: ['src/**/*.ts'],
   coveragePathIgnorePatterns: ['/node_modules/', '/dist/'],
+  // Force sequential test execution to avoid parser state conflicts
+  maxWorkers: 1,
+  // Clear mocks between tests
+  clearMocks: true,
+  resetMocks: true,
+  restoreMocks: true,
 }

@@ -21,6 +21,69 @@ import type {
 import { getParentId } from '../parser/hierarchy-detector.js'
 
 /**
+ * Node.js built-in modules (to ignore when resolving imports)
+ */
+const NODE_BUILTIN_MODULES = [
+  'path',
+  'fs',
+  'fs/promises',
+  'crypto',
+  'util',
+  'stream',
+  'events',
+  'buffer',
+  'url',
+  'querystring',
+  'http',
+  'https',
+  'net',
+  'dns',
+  'os',
+  'child_process',
+  'cluster',
+  'zlib',
+  'assert',
+  'string_decoder',
+  'tty',
+  'dgram',
+  'v8',
+  'vm',
+  'process',
+  'console',
+]
+
+/**
+ * Check if an import path should be ignored (external dependencies)
+ *
+ * @param importPath - Import path to check
+ * @returns true if should be ignored (external dependency)
+ */
+function shouldIgnoreImport(importPath: string): boolean {
+  // Ignore Node.js built-in modules
+  if (NODE_BUILTIN_MODULES.includes(importPath)) {
+    return true
+  }
+
+  // Ignore Node.js built-in with subpaths (e.g., 'fs/promises')
+  if (NODE_BUILTIN_MODULES.some(mod => importPath.startsWith(`${mod}/`))) {
+    return true
+  }
+
+  // Ignore npm packages (not starting with . or /)
+  if (!importPath.startsWith('.') && !importPath.startsWith('/')) {
+    return true
+  }
+
+  // Ignore TypeScript type literal strings (very short, no slashes)
+  // These are accidentally parsed as imports by extractImports
+  if (importPath.length <= 10 && !importPath.includes('/') && !importPath.includes('\\')) {
+    return true
+  }
+
+  return false
+}
+
+/**
  * Build dependency graph from parsed files
  *
  * @param files - Parsed files with import information
@@ -375,6 +438,12 @@ function createImportEdges(
         filePathMap
       )
       if (!resolvedPath) {
+        // Skip external dependencies silently (Node.js built-ins, npm packages)
+        if (shouldIgnoreImport(imp.importPath)) {
+          continue
+        }
+
+        // Only warn about unresolved internal imports (relative paths)
         console.warn(
           `[GraphBuilder] Cannot resolve import '${imp.importPath}' from ${file.path}`
         )
