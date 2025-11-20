@@ -54,6 +54,13 @@ function createServer(): Server {
                   'Output format: json (graph data), mermaid (diagram), or both (default: both)',
                 default: 'both',
               },
+              verbosity: {
+                type: 'string',
+                enum: ['brief', 'detail'],
+                description:
+                  'Output verbosity: brief (summary only, ~80% token reduction), detail (full graph + mermaid). Default: detail',
+                default: 'detail',
+              },
               level: {
                 type: 'string',
                 enum: ['file', 'component', 'module'],
@@ -85,6 +92,7 @@ function createServer(): Server {
         const args = (request.params.arguments || {}) as Record<string, unknown>
         const projectPath = args.projectPath as string
         const format = (args.format as 'json' | 'mermaid' | 'both') || 'both'
+        const verbosity = (args.verbosity as 'brief' | 'detail') || 'detail'
         const level = (args.level as 'file' | 'component' | 'module') || 'file'
         const edgeTypes = (args.edgeTypes as ('import' | 'implement' | 'render')[]) || ['import']
 
@@ -104,18 +112,24 @@ function createServer(): Server {
           `[MCP] Built graph at ${level} level with edge types [${edgeTypes.join(', ')}]: ${graph.nodes.length} nodes, ${graph.edges.length} edges`
         )
 
-        // Generate output based on format
+        // Generate output based on format and verbosity
         const result: DependencyGraphResult = {}
 
-        if (format === 'json' || format === 'both') {
-          result.graph = graph
-        }
+        // Brief mode: only return summary, skip heavy graph/mermaid data
+        if (verbosity === 'brief') {
+          // Skip graph and mermaid generation to save tokens
+        } else {
+          // Detail mode: full output
+          if (format === 'json' || format === 'both') {
+            result.graph = graph
+          }
 
-        if (format === 'mermaid' || format === 'both') {
-          result.mermaid = generateMermaid(graph, {
-            useRelativePaths: true,
-            projectRoot: projectPath,
-          })
+          if (format === 'mermaid' || format === 'both') {
+            result.mermaid = generateMermaid(graph, {
+              useRelativePaths: true,
+              projectRoot: projectPath,
+            })
+          }
         }
 
         // Add summary
@@ -125,28 +139,31 @@ function createServer(): Server {
           totalEdges: graph.edges.length,
         }
 
-        // Add edge type counts (Phase 3)
-        if (edgeTypes.includes('import')) {
-          summary.totalImportEdges = graph.edges.filter((e) => e.type === 'import').length
-        }
-        if (edgeTypes.includes('implement')) {
-          summary.totalImplementEdges = graph.edges.filter((e) => e.type === 'implement').length
-        }
-        if (edgeTypes.includes('render')) {
-          summary.totalRenderEdges = graph.edges.filter((e) => e.type === 'render').length
-        }
+        // Detail mode: add detailed statistics
+        if (verbosity === 'detail') {
+          // Add edge type counts (Phase 3)
+          if (edgeTypes.includes('import')) {
+            summary.totalImportEdges = graph.edges.filter((e) => e.type === 'import').length
+          }
+          if (edgeTypes.includes('implement')) {
+            summary.totalImplementEdges = graph.edges.filter((e) => e.type === 'implement').length
+          }
+          if (edgeTypes.includes('render')) {
+            summary.totalRenderEdges = graph.edges.filter((e) => e.type === 'render').length
+          }
 
-        // Add level-specific counts
-        if (level === 'module') {
-          const moduleNodes = graph.nodes.filter(
-            (n) => n.type === 'hierarchy' && n.level === 'module'
-          )
-          summary.totalModules = moduleNodes.length
-        } else if (level === 'component') {
-          const componentNodes = graph.nodes.filter(
-            (n) => n.type === 'hierarchy' && n.level === 'component'
-          )
-          summary.totalComponents = componentNodes.length
+          // Add level-specific counts
+          if (level === 'module') {
+            const moduleNodes = graph.nodes.filter(
+              (n) => n.type === 'hierarchy' && n.level === 'module'
+            )
+            summary.totalModules = moduleNodes.length
+          } else if (level === 'component') {
+            const componentNodes = graph.nodes.filter(
+              (n) => n.type === 'hierarchy' && n.level === 'component'
+            )
+            summary.totalComponents = componentNodes.length
+          }
         }
 
         result.summary = summary

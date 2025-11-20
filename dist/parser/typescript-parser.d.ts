@@ -7,16 +7,17 @@ import Parser from 'tree-sitter';
 import type { ParsedFile } from '../core/types.js';
 /**
  * Initialize tree-sitter parser with TypeScript grammar
+ * @deprecated Use internal createTSParser/createTSXParser instead
  */
 export declare function createParser(): Parser;
 /**
  * Parse a single file to extract import information
  *
  * @param filePath - Absolute path to the file
- * @param parser - tree-sitter parser instance
+ * @param _unusedParser - DEPRECATED: parser parameter is no longer used, kept for backward compatibility
  * @returns Parsed file with imports, or null if parsing fails
  */
-export declare function parseFile(filePath: string, parser: Parser): Promise<ParsedFile | null>;
+export declare function parseFile(filePath: string, _unusedParser?: Parser): Promise<ParsedFile | null>;
 /**
  * Parse all files in a project directory
  *
