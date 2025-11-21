@@ -51,8 +51,8 @@ function createServer(): Server {
                 type: 'string',
                 enum: ['json', 'mermaid', 'both'],
                 description:
-                  'Output format: json (graph data), mermaid (diagram), or both (default: both)',
-                default: 'both',
+                  'Output format: json (graph data), mermaid (diagram), or both (default: mermaid)',
+                default: 'mermaid',
               },
               verbosity: {
                 type: 'string',
@@ -91,7 +91,7 @@ function createServer(): Server {
       try {
         const args = (request.params.arguments || {}) as Record<string, unknown>
         const projectPath = args.projectPath as string
-        const format = (args.format as 'json' | 'mermaid' | 'both') || 'both'
+        const format = (args.format as 'json' | 'mermaid' | 'both') || 'mermaid'
         const verbosity = (args.verbosity as 'brief' | 'detail') || 'detail'
         const level = (args.level as 'file' | 'component' | 'module') || 'file'
         const edgeTypes = (args.edgeTypes as ('import' | 'implement' | 'render')[]) || ['import']

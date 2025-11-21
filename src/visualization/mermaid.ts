@@ -102,11 +102,11 @@ function formatNodeLabel(
  * Sanitize node ID to be valid Mermaid syntax
  *
  * Mermaid node IDs can contain letters, numbers, underscore, hyphen
- * We keep the format from builder.ts: file:name-hash
+ * Replace colons and other special characters with underscore
  */
 function sanitizeNodeId(id: string): string {
-  // Replace any remaining invalid characters with underscore
-  return id.replace(/[^a-zA-Z0-9_\-:]/g, '_')
+  // Replace any invalid characters (including colons) with underscore
+  return id.replace(/[^a-zA-Z0-9_\-]/g, '_')
 }
 
 /**

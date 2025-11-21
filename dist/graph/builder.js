@@ -5,7 +5,6 @@
  */
 import * as path from 'path';
 import * as crypto from 'crypto';
-import { getParentId } from '../parser/hierarchy-detector.js';
 /**
  * Node.js built-in modules (to ignore when resolving imports)
  */
@@ -148,55 +147,49 @@ function buildFileGraph(files, filePathMap, edgeTypes = ['import']) {
     };
 }
 /**
+ * Extract module/component name from file path
+ * Uses simple heuristic: src/{module}/* -> module
+ *
+ * @example
+ * extractModuleName('src/core/types.ts') -> 'core'
+ * extractModuleName('src/parser/typescript-parser.ts') -> 'parser'
+ */
+function extractModuleName(filePath) {
+    const normalized = filePath.replace(/\\/g, '/');
+    // Match pattern: src/{moduleName}/...
+    const match = normalized.match(/src\/([^\/]+)/);
+    if (match && match[1]) {
+        return match[1];
+    }
+    return null;
+}
+/**
  * Build hierarchy graph (module or component level)
  * Returns only parent nodes (modules/components) with aggregated edges
  */
 function buildHierarchyGraph(files, filePathMap, level) {
-    const nodes = new Map();
-    const edges = new Map();
     const parentNodes = new Map();
-    // Map from file path to parent ID
     const fileToParent = new Map();
-    // Step 1: Create file nodes and collect parents
+    // Step 1: Auto-detect modules from directory structure
     for (const file of files) {
-        const hierarchy = file.hierarchy;
-        if (!hierarchy)
+        const moduleName = extractModuleName(file.path);
+        if (!moduleName)
             continue;
-        // Create file node
-        const fileNodeId = generateNodeId(file.path);
-        let parentId;
-        // Check if this file belongs to a module/component at the requested level
-        if (hierarchy.level === level && hierarchy.parent) {
-            parentId = getParentId(hierarchy.parent, level);
-            fileToParent.set(file.path, parentId);
-            // Create parent node if not exists
-            if (!parentNodes.has(parentId)) {
-                const parentNode = {
-                    type: 'hierarchy',
-                    level: level,
-                    id: parentId,
-                    path: hierarchy.parent,
-                    status: 'normal',
-                };
-                parentNodes.set(parentId, parentNode);
-            }
+        const parentId = `${level}:${moduleName}`;
+        fileToParent.set(file.path, parentId);
+        // Create parent node if not exists
+        if (!parentNodes.has(parentId)) {
+            const parentNode = {
+                type: 'hierarchy',
+                level: level,
+                id: parentId,
+                path: moduleName,
+                status: 'normal',
+            };
+            parentNodes.set(parentId, parentNode);
         }
-        // Create file node with optional parent reference
-        const fileNode = {
-            type: 'hierarchy',
-            level: 'file',
-            id: fileNodeId,
-            path: file.path,
-            status: 'normal',
-            parent: parentId,
-        };
-        nodes.set(fileNodeId, fileNode);
     }
-    // Step 2: Add parent nodes to the graph
-    for (const parentNode of parentNodes.values()) {
-        nodes.set(parentNode.id, parentNode);
-    }
-    // Step 3: Create file-level edges and aggregate to parent-level
+    // Step 2: Create file-level edges and aggregate to parent-level
     const aggregatedEdges = new Map();
     for (const file of files) {
         const fromParent = fileToParent.get(file.path);
@@ -223,19 +216,15 @@ function buildHierarchyGraph(files, filePathMap, level) {
             }
         }
     }
-    // Add aggregated edges to the graph
-    for (const edge of aggregatedEdges.values()) {
-        edges.set(`${edge.from}->${edge.to}`, edge);
-    }
     const nodeCount = parentNodes.size;
     const fileCount = files.length;
-    const edgeCount = edges.size;
+    const edgeCount = aggregatedEdges.size;
     console.log(`[GraphBuilder] Aggregated ${fileCount} files into ${nodeCount} ${level} nodes with ${edgeCount} edges`);
     // Return only parent nodes (modules/components), not file nodes
     // This provides a clean hierarchical view at the requested level
     return {
         nodes: Array.from(parentNodes.values()),
-        edges: Array.from(edges.values()),
+        edges: Array.from(aggregatedEdges.values()),
     };
 }
 /**

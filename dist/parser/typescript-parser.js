@@ -490,7 +490,7 @@ async function findSourceFiles(dir) {
                     await traverse(fullPath);
                 }
                 else if (entry.isFile()) {
-                    if (isSourceFile(entry.name)) {
+                    if (isSourceFile(entry.name) && !shouldIgnoreFile(entry.name)) {
                         files.push(fullPath);
                     }
                 }
@@ -518,6 +518,10 @@ function shouldIgnoreDirectory(name) {
         'coverage',
         '__pycache__',
         'venv',
+        '__tests__', // Test directories
+        'test',
+        'tests',
+        '__mocks__',
     ];
     return ignoredDirs.includes(name);
 }
@@ -527,5 +531,37 @@ function shouldIgnoreDirectory(name) {
 function isSourceFile(filename) {
     const ext = path.extname(filename);
     return ['.ts', '.tsx', '.js', '.jsx', '.mts', '.cts'].includes(ext);
+}
+/**
+ * Check if a file should be ignored
+ */
+function shouldIgnoreFile(filename) {
+    // Ignore test files
+    if (filename.includes('.test.') || filename.includes('.spec.')) {
+        return true;
+    }
+    // Ignore config files
+    const configFiles = [
+        'jest.config.js',
+        'jest.config.ts',
+        'vitest.config.js',
+        'vitest.config.ts',
+        'webpack.config.js',
+        'rollup.config.js',
+        'vite.config.js',
+        'vite.config.ts',
+        'tsconfig.json',
+        'babel.config.js',
+        '.eslintrc.js',
+        'prettier.config.js',
+    ];
+    if (configFiles.includes(filename)) {
+        return true;
+    }
+    // Ignore script/debug files
+    if (filename.startsWith('debug-') || filename.startsWith('test-') || filename.startsWith('demo-')) {
+        return true;
+    }
+    return false;
 }
 //# sourceMappingURL=typescript-parser.js.map

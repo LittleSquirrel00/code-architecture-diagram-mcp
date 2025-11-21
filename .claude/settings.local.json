@@ -1,26 +1,12 @@
 {
   "permissions": {
     "allow": [
-      "Bash(npm test -- __tests__/implement-detection.test.ts --no-coverage)",
-      "Bash(npm test -- __tests__/mermaid-implement.test.ts --no-coverage)",
-      "Bash(openspec archive add-implement-edge-tracking --yes)",
-      "Bash(openspec init add-render-edge-tracking)",
-      "Bash(openspec validate add-render-edge-tracking --strict)",
-      "Bash(openspec show add-render-edge-tracking --json --deltas-only)",
-      "Bash(cat openspec/changes/add-render-edge-tracking/proposal.md)",
-      "Bash(npm test -- __tests__/render-detection.test.ts)",
-      "Bash(npm test -- __tests__/render-detection.test.ts --no-coverage)",
-      "Bash(chmod +x debug-jsx.mjs)",
-      "Bash(node debug-jsx.mjs)",
-      "Bash(node /Users/zhangfeng144/Git/code-architecture-diagram-mcp/debug-ast.mjs)",
-      "Bash(node /Users/zhangfeng144/Git/code-architecture-diagram-mcp/debug-jsx.mjs)",
-      "Bash(node /Users/zhangfeng144/Git/code-architecture-diagram-mcp/debug-render-edges.mjs)",
-      "Bash(npm test -- __tests__/render-edge-builder.test.ts --no-coverage)",
-      "Bash(npm test -- __tests__/mermaid-render.test.ts --no-coverage)",
-      "Bash(node /Users/zhangfeng144/Git/code-architecture-diagram-mcp/demo-render-visualization.mjs)",
-      "Bash(npm test -- __tests__/integration-render.test.ts --no-coverage)",
-      "Bash(npm test -- __tests__/parser.test.ts --no-coverage)",
-      "Bash(node /Users/zhangfeng144/Git/code-architecture-diagram-mcp/demo-phase4-complete.mjs)"
+      "Bash(node verify-fix.mjs)",
+      "Bash(node show-core-arch.mjs)",
+      "Bash(git add src/parser/typescript-parser.ts)",
+      "Bash(git commit -m \"$(cat <<''EOF''\nfeat: 过滤测试/配置文件,只分析核心源码\n\n## Problem\nparseProject扫描所有.ts文件,包括:\n- 33个测试文件(__tests__/*)\n- 配置文件(jest.config.js等)\n- 调试脚本(debug-*.ts, test-*.mjs)\n导致分析结果包含大量无关文件,噪音过多。\n\n## Solution\n1. **目录过滤**: 跳过__tests__, test, tests, __mocks__目录\n2. **文件名过滤**: \n   - *.test.ts, *.spec.ts (测试文件)\n   - jest.config.*, webpack.config.* (配置文件)\n   - debug-*, test-*, demo-* (临时脚本)\n\n## Test Result\nBefore: 42 files (src + tests + fixtures + scripts)\nAfter: 6 files (仅src/核心代码)\n\n核心架构清晰可见:\n```\ntypes.ts (基础)\n  ↑\n├─ builder.ts\n├─ typescript-parser.ts\n├─ mermaid.ts\n└─ server.ts (顶层)\n```\n\n## Impact\n- ✅ 分析结果聚焦核心代码\n- ✅ Token消耗降低85% (42→6文件)\n- ✅ 图表更清晰易读\n- ✅ 符合用户需求:关注架构而非测试\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n\nCo-Authored-By: Claude <noreply@anthropic.com>\nEOF\n)\")",
+      "Bash(npm run build)",
+      "Bash(node test-module-level.mjs)"
     ],
     "deny": [],
     "ask": []
