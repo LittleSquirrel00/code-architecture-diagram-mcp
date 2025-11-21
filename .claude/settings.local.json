@@ -18,7 +18,10 @@
       "Bash(node find-problem-line.mjs)",
       "Bash(npm view tree-sitter versions --json)",
       "Bash(npm view tree-sitter-typescript versions --json)",
-      "Bash(chmod +x verify-fix.mjs)"
+      "Bash(chmod +x verify-fix.mjs)",
+      "Bash(rm debug-ast.mjs debug-graph-ast.mjs debug-jsx.mjs debug-missing-deps.mjs debug-render-edges.mjs debug-specific-types.mjs debug-type-extraction.mjs demo-phase4-complete.mjs demo-render-visualization.mjs diagnose-deep.mjs diagnose-parser.mjs find-problem-line.mjs test-full.mjs test-interface-edges.mjs test-large-file.mjs test-manual.mjs test-mcp-call.mjs test-methods.mjs test-module-level.mjs test-single.mjs test-versions.mjs test-videoflow.mjs verify-fix.mjs)",
+      "Bash(rm debug-ast.ts test-resolve.ts)",
+      "Bash(rm abstract-layer-example.md)"
     ],
     "deny": [],
     "ask": []
