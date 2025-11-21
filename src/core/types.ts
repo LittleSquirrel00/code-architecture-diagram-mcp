@@ -134,11 +134,21 @@ export interface Graph {
 }
 
 /**
- * Hierarchy information for a file (Phase 2)
+ * Hierarchy information for a file
+ *
+ * Supports five levels:
+ * - architecture: System-level modules (monorepo packages/apps)
+ * - module: Business modules (src/{name}/)
+ * - component: Code components (src/{module}/{name}/)
+ * - file: Individual source files
+ * - interface: Type definitions (interface/type/class/enum)
  */
 export interface HierarchyInfo {
-  level: 'module' | 'component' | 'file'
-  parent?: string // Relative path to parent (e.g., 'src/modules/auth')
+  level: 'architecture' | 'module' | 'component' | 'file'
+  parent?: string // Parent path (e.g., 'core', 'parser/lexer')
+  architecture?: string // Architecture name for monorepo (e.g., 'server', 'client')
+  module?: string // Module name (e.g., 'core', 'parser')
+  component?: string // Component name (e.g., 'lexer', 'detector')
 }
 
 /**
@@ -150,6 +160,7 @@ export interface ParsedFile {
   implements?: ImplementInfo[] // Phase 3: Optional interface implementations
   renders?: RenderInfo[]       // Phase 4: Optional component renders
   hierarchy?: HierarchyInfo    // Phase 2: Optional hierarchy metadata
+  typeDefinitions?: TypeDefinition[] // Interface level: type definitions
 }
 
 /**
@@ -159,6 +170,19 @@ export interface ImportInfo {
   importPath: string
   isTypeOnly: boolean
   isDynamic: boolean
+}
+
+/**
+ * Type definition extracted from a file
+ * Represents interface, type, class, or enum declarations
+ */
+export interface TypeDefinition {
+  kind: 'interface' | 'type' | 'class' | 'enum'
+  name: string
+  isExported: boolean
+  extends?: string[]      // For interfaces/classes that extend other types
+  implements?: string[]   // For classes that implement interfaces
+  references?: string[]   // Type references: union members, property types, etc.
 }
 
 /**
@@ -189,14 +213,50 @@ export interface RenderInfo {
 export type EdgeType = 'import' | 'implement' | 'render'
 
 /**
+ * View mode for graph filtering (Phase 6)
+ * - global: Show complete graph (default)
+ * - focused: Show only dependencies within specified module/file
+ * - neighbors: Show focus node + direct dependents
+ */
+export type ViewMode = 'global' | 'focused' | 'neighbors'
+
+/**
  * Options for getDependencyGraph
  */
 export interface GetDependencyGraphOptions {
-  // Phase 2: Hierarchy level support
-  level?: 'file' | 'component' | 'module' // Default: 'file' (backward compatible)
-  // Phase 3: Edge type filtering
+  // Hierarchy level support
+  level?: 'file' | 'component' | 'module' | 'architecture' | 'interface' // Default: 'file' (backward compatible)
+  // Edge type filtering
   edgeTypes?: EdgeType[] // Default: ['import'] (backward compatible)
-  // Phase 4: + 'render'
-  // Phase 5: diff?: boolean
-  // Phase 6: view?: 'global' | 'focused' | 'neighbors', focusPath?: string
+  // Phase 6: View filtering
+  mode?: ViewMode       // Default: 'global' (show complete graph)
+  focusPath?: string    // Required when mode is 'focused' or 'neighbors'
+  neighborDepth?: number // Default: 1 (direct neighbors only)
+  internalLevel?: 'file' | 'interface' // Level for internal analysis in focused mode. Default: 'file'
+}
+
+/**
+ * File changes for diff analysis (Phase 5)
+ */
+export interface FileChanges {
+  added: string[]    // Newly added files
+  modified: string[] // Modified files
+  removed: string[]  // Removed files
+}
+
+/**
+ * Diff result showing graph changes (Phase 5)
+ */
+export interface DiffResult {
+  added: Graph       // New nodes and edges
+  removed: Graph     // Removed nodes and edges
+  modified: Graph    // Modified relationships
+  summary: {
+    addedNodes: number
+    removedNodes: number
+    addedEdges: number
+    removedEdges: number
+    hasCircularDependency: boolean
+    circularPaths?: string[][]
+  }
 }

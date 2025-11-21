@@ -6,7 +6,19 @@
       "Bash(git add src/parser/typescript-parser.ts)",
       "Bash(git commit -m \"$(cat <<''EOF''\nfeat: 过滤测试/配置文件,只分析核心源码\n\n## Problem\nparseProject扫描所有.ts文件,包括:\n- 33个测试文件(__tests__/*)\n- 配置文件(jest.config.js等)\n- 调试脚本(debug-*.ts, test-*.mjs)\n导致分析结果包含大量无关文件,噪音过多。\n\n## Solution\n1. **目录过滤**: 跳过__tests__, test, tests, __mocks__目录\n2. **文件名过滤**: \n   - *.test.ts, *.spec.ts (测试文件)\n   - jest.config.*, webpack.config.* (配置文件)\n   - debug-*, test-*, demo-* (临时脚本)\n\n## Test Result\nBefore: 42 files (src + tests + fixtures + scripts)\nAfter: 6 files (仅src/核心代码)\n\n核心架构清晰可见:\n```\ntypes.ts (基础)\n  ↑\n├─ builder.ts\n├─ typescript-parser.ts\n├─ mermaid.ts\n└─ server.ts (顶层)\n```\n\n## Impact\n- ✅ 分析结果聚焦核心代码\n- ✅ Token消耗降低85% (42→6文件)\n- ✅ 图表更清晰易读\n- ✅ 符合用户需求:关注架构而非测试\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n\nCo-Authored-By: Claude <noreply@anthropic.com>\nEOF\n)\")",
       "Bash(npm run build)",
-      "Bash(node test-module-level.mjs)"
+      "Bash(node test-module-level.mjs)",
+      "Bash(node /tmp/test-hierarchy.mjs)",
+      "Bash(node /tmp/test-builder.mjs)",
+      "Bash(node /tmp/test-interface.mjs)",
+      "Bash(node /tmp/test-phase6-acceptance.mjs)",
+      "Bash(cat -A)",
+      "Bash(node test-single.mjs)",
+      "Bash(/tmp/builder-old.ts)",
+      "Bash(node test-versions.mjs)",
+      "Bash(node find-problem-line.mjs)",
+      "Bash(npm view tree-sitter versions --json)",
+      "Bash(npm view tree-sitter-typescript versions --json)",
+      "Bash(chmod +x verify-fix.mjs)"
     ],
     "deny": [],
     "ask": []

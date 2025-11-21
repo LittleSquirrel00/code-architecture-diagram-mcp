@@ -12,9 +12,9 @@ import {
   ListToolsRequestSchema,
 } from '@modelcontextprotocol/sdk/types.js'
 import { parseProject } from '../parser/typescript-parser.js'
-import { buildGraph } from '../graph/builder.js'
+import { buildGraph, buildDiff } from '../graph/builder.js'
 import { generateMermaid } from '../visualization/mermaid.js'
-import type { Graph } from '../core/types.js'
+import type { Graph, FileChanges } from '../core/types.js'
 
 /**
  * Create and configure the MCP server
@@ -63,9 +63,9 @@ function createServer(): Server {
               },
               level: {
                 type: 'string',
-                enum: ['file', 'component', 'module'],
+                enum: ['file', 'component', 'module', 'architecture', 'interface'],
                 description:
-                  'Hierarchy level: file (all files), component (aggregate by components), module (aggregate by modules). Default: file',
+                  'Hierarchy level: file (all files), component (aggregate by components), module (aggregate by modules), architecture (aggregate by packages/apps), interface (type definitions). Default: file',
                 default: 'file',
               },
               edgeTypes: {
@@ -78,8 +78,85 @@ function createServer(): Server {
                   'Edge types to include: import (code imports), implement (interface implementations), render (component rendering). Default: [\'import\']',
                 default: ['import'],
               },
+              mode: {
+                type: 'string',
+                enum: ['global', 'focused', 'neighbors'],
+                description:
+                  'View mode: global (complete graph), focused (only internal dependencies), neighbors (focus + direct dependents). Default: \'global\'',
+                default: 'global',
+              },
+              focusPath: {
+                type: 'string',
+                description:
+                  'Path to focus on when mode is \'focused\' or \'neighbors\'. Can be file path, module name, or component name.',
+              },
+              neighborDepth: {
+                type: 'number',
+                description:
+                  'Depth for neighbor traversal when mode is \'neighbors\'. Default: 1',
+                default: 1,
+              },
+              internalLevel: {
+                type: 'string',
+                enum: ['file', 'interface'],
+                description:
+                  'Level for internal analysis when mode is \'focused\'. Shows internal dependencies at this level. Default: \'file\'',
+                default: 'file',
+              },
             },
             required: ['projectPath'],
+          },
+        },
+        {
+          name: 'getArchitectureDiff',
+          description:
+            'Analyze architecture changes between two states of a project. Detects new dependencies, removed dependencies, and circular dependencies. Phase 5: Change detection and diff analysis.',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              projectPath: {
+                type: 'string',
+                description: 'Absolute path to the project root directory',
+              },
+              changes: {
+                type: 'object',
+                description: 'File changes to analyze',
+                properties: {
+                  added: {
+                    type: 'array',
+                    items: { type: 'string' },
+                    description: 'Paths of newly added files',
+                  },
+                  modified: {
+                    type: 'array',
+                    items: { type: 'string' },
+                    description: 'Paths of modified files',
+                  },
+                  removed: {
+                    type: 'array',
+                    items: { type: 'string' },
+                    description: 'Paths of removed files',
+                  },
+                },
+                required: ['added', 'modified', 'removed'],
+              },
+              level: {
+                type: 'string',
+                enum: ['file', 'component', 'module', 'architecture', 'interface'],
+                description: 'Hierarchy level for analysis. Default: file',
+                default: 'file',
+              },
+              edgeTypes: {
+                type: 'array',
+                items: {
+                  type: 'string',
+                  enum: ['import', 'implement', 'render'],
+                },
+                description: 'Edge types to include. Default: [\'import\']',
+                default: ['import'],
+              },
+            },
+            required: ['projectPath', 'changes'],
           },
         },
       ],
@@ -93,8 +170,12 @@ function createServer(): Server {
         const projectPath = args.projectPath as string
         const format = (args.format as 'json' | 'mermaid' | 'both') || 'mermaid'
         const verbosity = (args.verbosity as 'brief' | 'detail') || 'detail'
-        const level = (args.level as 'file' | 'component' | 'module') || 'file'
+        const level = (args.level as 'file' | 'component' | 'module' | 'architecture' | 'interface') || 'file'
         const edgeTypes = (args.edgeTypes as ('import' | 'implement' | 'render')[]) || ['import']
+        const mode = (args.mode as 'global' | 'focused' | 'neighbors') || 'global'
+        const focusPath = args.focusPath as string | undefined
+        const neighborDepth = (args.neighborDepth as number) || 1
+        const internalLevel = (args.internalLevel as 'file' | 'interface') || 'file'
 
         // Validate project path
         if (!projectPath || typeof projectPath !== 'string') {
@@ -106,10 +187,10 @@ function createServer(): Server {
         const files = await parseProject(projectPath)
         console.error(`[MCP] Parsed ${files.length} files`)
 
-        // Build dependency graph with level and edgeTypes options (Phase 3)
-        const graph = buildGraph(files, { level, edgeTypes })
+        // Build dependency graph with level, edgeTypes, and view options (Phase 3 & 6)
+        const graph = buildGraph(files, { level, edgeTypes, mode, focusPath, neighborDepth, internalLevel }, projectPath)
         console.error(
-          `[MCP] Built graph at ${level} level with edge types [${edgeTypes.join(', ')}]: ${graph.nodes.length} nodes, ${graph.edges.length} edges`
+          `[MCP] Built graph at ${level} level with edge types [${edgeTypes.join(', ')}], mode=${mode}: ${graph.nodes.length} nodes, ${graph.edges.length} edges`
         )
 
         // Generate output based on format and verbosity
@@ -153,7 +234,12 @@ function createServer(): Server {
           }
 
           // Add level-specific counts
-          if (level === 'module') {
+          if (level === 'architecture') {
+            const archNodes = graph.nodes.filter(
+              (n) => n.type === 'hierarchy' && n.level === 'architecture'
+            )
+            summary.totalArchitectures = archNodes.length
+          } else if (level === 'module') {
             const moduleNodes = graph.nodes.filter(
               (n) => n.type === 'hierarchy' && n.level === 'module'
             )
@@ -163,6 +249,9 @@ function createServer(): Server {
               (n) => n.type === 'hierarchy' && n.level === 'component'
             )
             summary.totalComponents = componentNodes.length
+          } else if (level === 'interface') {
+            const typeNodes = graph.nodes.filter((n) => n.type === 'abstract')
+            summary.totalTypeDefinitions = typeNodes.length
           }
         }
 
@@ -188,6 +277,70 @@ function createServer(): Server {
               text: JSON.stringify(
                 {
                   error: 'Failed to generate dependency graph',
+                  message: errorMessage,
+                },
+                null,
+                2
+              ),
+            },
+          ],
+          isError: true,
+        }
+      }
+    }
+
+    if (request.params.name === 'getArchitectureDiff') {
+      try {
+        const args = (request.params.arguments || {}) as Record<string, unknown>
+        const projectPath = args.projectPath as string
+        const changes = args.changes as FileChanges
+        const level = (args.level as 'file' | 'component' | 'module' | 'architecture' | 'interface') || 'file'
+        const edgeTypes = (args.edgeTypes as ('import' | 'implement' | 'render')[]) || ['import']
+
+        // Validate inputs
+        if (!projectPath || typeof projectPath !== 'string') {
+          throw new Error('Invalid projectPath: must be a non-empty string')
+        }
+
+        if (!changes || !Array.isArray(changes.added) || !Array.isArray(changes.modified) || !Array.isArray(changes.removed)) {
+          throw new Error('Invalid changes: must have added, modified, and removed arrays')
+        }
+
+        console.error(`[MCP] Analyzing architecture diff for: ${projectPath}`)
+        console.error(`[MCP] Changes: +${changes.added.length} added, ~${changes.modified.length} modified, -${changes.removed.length} removed`)
+
+        // Parse current project state
+        const currentFiles = await parseProject(projectPath)
+        const currentGraph = buildGraph(currentFiles, { level, edgeTypes }, projectPath)
+
+        // Build "old" graph by excluding added files
+        const oldFiles = currentFiles.filter(f => !changes.added.includes(f.path))
+        const oldGraph = buildGraph(oldFiles, { level, edgeTypes }, projectPath)
+
+        // Build diff
+        const diff = buildDiff(oldGraph, currentGraph, changes)
+
+        console.error(`[MCP] Diff complete: +${diff.summary.addedNodes} nodes, -${diff.summary.removedNodes} nodes`)
+
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify(diff, null, 2),
+            },
+          ],
+        }
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : String(error)
+        console.error(`[MCP] Error:`, error)
+
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify(
+                {
+                  error: 'Failed to analyze architecture diff',
                   message: errorMessage,
                 },
                 null,
@@ -235,10 +388,12 @@ interface DependencyGraphResult {
     totalFiles: number
     totalNodes: number
     totalEdges: number
-    totalModules?: number // Phase 2: Optional module count
-    totalComponents?: number // Phase 2: Optional component count
-    totalImportEdges?: number // Phase 3: Optional import edge count
-    totalImplementEdges?: number // Phase 3: Optional implement edge count
-    totalRenderEdges?: number // Phase 4: Optional render edge count
+    totalArchitectures?: number // Architecture count
+    totalModules?: number // Module count
+    totalComponents?: number // Component count
+    totalTypeDefinitions?: number // Type definition count (interface level)
+    totalImportEdges?: number // Import edge count
+    totalImplementEdges?: number // Implement edge count
+    totalRenderEdges?: number // Render edge count
   }
 }

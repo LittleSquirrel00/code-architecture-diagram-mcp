@@ -1,96 +1,117 @@
 /**
  * Hierarchy detection from directory structure
  *
- * Detects module and component boundaries using standard project patterns.
- * Uses simple pattern matching - no configuration needed.
- */
-
-export type HierarchyLevel = 'module' | 'component' | 'file'
-
-export interface HierarchyInfo {
-  level: HierarchyLevel
-  parent?: string // Relative path to parent (e.g., 'src/modules/auth')
-}
-
-interface Pattern {
-  regex: RegExp
-  level: 'module' | 'component'
-  captureIndex: number // Which capture group contains the parent name
-}
-
-/**
- * Patterns for detecting hierarchy, in priority order
- * Priority: modules > features > components > ui
+ * Detects architecture, module, and component boundaries based on directory depth.
+ * Uses simple depth-based detection - no hardcoded directory names.
  *
- * Note: Only explicitly recognized directory patterns are treated as hierarchy levels.
- * Directories like utils/, lib/, hooks/, etc. fall back to file-level.
+ * Hierarchy levels (based on depth from src/):
+ * - architecture: packages/{name}/ or apps/{name}/ (monorepo structure)
+ * - module: src/{name}/ (depth 0, first-level directory)
+ * - component: src/{module}/{name}/ (depth 1, second-level directory)
+ * - file: individual source files
  */
-const PATTERNS: Pattern[] = [
-  // Module patterns (specific directories with higher priority)
-  { regex: /src\/modules\/([^\/]+)/i, level: 'module', captureIndex: 0 },
-  { regex: /src\/features\/([^\/]+)/i, level: 'module', captureIndex: 0 },
 
-  // Component patterns
-  { regex: /src\/components\/([^\/]+)/i, level: 'component', captureIndex: 0 },
-  { regex: /src\/ui\/([^\/]+)/i, level: 'component', captureIndex: 0 },
-]
+import type { HierarchyInfo } from '../core/types.js'
 
 /**
  * Detect hierarchy level and parent from file path
+ *
+ * Uses directory depth to determine hierarchy level:
+ * - Depth 0: module (src/xxx/file.ts)
+ * - Depth 1: component (src/xxx/yyy/file.ts)
+ * - Depth 2+: file (deeper nesting)
+ *
+ * Also detects architecture level for monorepo structures:
+ * - packages/xxx/src/... or apps/xxx/src/...
  *
  * @param filePath - Absolute or relative file path
  * @returns Hierarchy information
  *
  * @example
- * detectHierarchy('/proj/src/modules/auth/login.ts')
- * // => { level: 'module', parent: 'src/modules/auth' }
+ * detectHierarchy('/proj/src/parser/lexer/scanner.ts')
+ * // => { level: 'component', parent: 'parser/lexer', module: 'parser', component: 'lexer' }
  *
- * detectHierarchy('/proj/src/utils/helpers.ts')
- * // => { level: 'file' }
+ * detectHierarchy('/proj/src/core/types.ts')
+ * // => { level: 'module', parent: 'core', module: 'core' }
+ *
+ * detectHierarchy('/proj/packages/server/src/core/types.ts')
+ * // => { level: 'module', parent: 'core', architecture: 'server', module: 'core' }
  */
 export function detectHierarchy(filePath: string): HierarchyInfo {
   // Normalize path to use forward slashes
   const normalizedPath = filePath.replace(/\\/g, '/')
+  const parts = normalizedPath.split('/')
 
-  // Try each pattern in priority order
-  for (const pattern of PATTERNS) {
-    const match = normalizedPath.match(pattern.regex)
-    if (match) {
-      // Extract the parent path up to and including the matched directory
-      const parentPath = extractParentPath(normalizedPath, match)
+  // Check for monorepo architecture (packages/xxx or apps/xxx)
+  let architecture: string | undefined
+  let srcIndex = parts.indexOf('src')
 
-      return {
-        level: pattern.level,
-        parent: parentPath,
-      }
+  // Detect architecture from packages/ or apps/ directory
+  const packagesIndex = parts.indexOf('packages')
+  const appsIndex = parts.indexOf('apps')
+  const archIndex = packagesIndex !== -1 ? packagesIndex : appsIndex
+
+  if (archIndex !== -1 && archIndex < srcIndex - 1) {
+    architecture = parts[archIndex + 1]
+  }
+
+  // If no src directory found, return file-level
+  if (srcIndex === -1) {
+    return { level: 'file' }
+  }
+
+  // Calculate depth relative to src/
+  // src/xxx/file.ts -> depth 0 (module level)
+  // src/xxx/yyy/file.ts -> depth 1 (component level)
+  // src/xxx/yyy/zzz/file.ts -> depth 2+ (file level)
+  const partsAfterSrc = parts.slice(srcIndex + 1)
+  const depth = partsAfterSrc.length - 1 // -1 for the filename
+
+  if (depth < 1) {
+    // File directly in src/ (e.g., src/index.ts, src/App.tsx)
+    // Treat as a special "__root__" module for module-level aggregation
+    return {
+      level: 'module',
+      parent: '__root__',
+      architecture,
+      module: '__root__',
     }
   }
 
-  // No pattern matched - file-level only
-  return { level: 'file' }
-}
+  const moduleName = partsAfterSrc[0]
 
-/**
- * Extract parent path from regex match
- *
- * @example
- * Input: '/proj/src/modules/auth/services/login.ts', match=['src/modules/auth', 'auth']
- * Output: 'src/modules/auth'
- */
-function extractParentPath(
-  filePath: string,
-  match: RegExpMatchArray
-): string {
-  const fullMatch = match[0] // e.g., 'src/modules/auth'
-
-  // Find the position of the full match in the file path
-  const matchIndex = filePath.indexOf(fullMatch)
-  if (matchIndex === -1) {
-    return fullMatch // Fallback
+  if (depth === 1) {
+    // src/xxx/file.ts -> module level
+    return {
+      level: 'module',
+      parent: moduleName,
+      architecture,
+      module: moduleName,
+    }
   }
 
-  // Return the matched portion (parent directory)
-  return fullMatch
+  if (depth === 2) {
+    // src/xxx/yyy/file.ts -> component level
+    const componentName = partsAfterSrc[1]
+    return {
+      level: 'component',
+      parent: `${moduleName}/${componentName}`,
+      architecture,
+      module: moduleName,
+      component: componentName,
+    }
+  }
+
+  // depth >= 3: deeper nesting, still treat as component
+  // src/xxx/yyy/zzz/file.ts -> component: xxx/yyy
+  const componentName = partsAfterSrc[1]
+  return {
+    level: 'component',
+    parent: `${moduleName}/${componentName}`,
+    architecture,
+    module: moduleName,
+    component: componentName,
+  }
 }
 
 /**

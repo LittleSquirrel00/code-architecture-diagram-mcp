@@ -115,5 +115,5 @@ Keep this managed block so 'openspec update' can refresh the instructions.
 ### MCP工具
 **代码可视化分析工具**
 * 分析代码依赖关系，生成mermaid图表
-`getDependencyGraph`: 生成项目的架构、模块、组件、文件、布局层级的图表。
+`getDependencyGraph`: 生成项目的架构、模块、组件、文件、布局层级的图表。默认使用mermaid的format。
 * (需要code-arch) *

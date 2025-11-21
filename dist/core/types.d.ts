@@ -117,11 +117,21 @@ export interface Graph {
     edges: Edge[];
 }
 /**
- * Hierarchy information for a file (Phase 2)
+ * Hierarchy information for a file
+ *
+ * Supports five levels:
+ * - architecture: System-level modules (monorepo packages/apps)
+ * - module: Business modules (src/{name}/)
+ * - component: Code components (src/{module}/{name}/)
+ * - file: Individual source files
+ * - interface: Type definitions (interface/type/class/enum)
  */
 export interface HierarchyInfo {
-    level: 'module' | 'component' | 'file';
+    level: 'architecture' | 'module' | 'component' | 'file';
     parent?: string;
+    architecture?: string;
+    module?: string;
+    component?: string;
 }
 /**
  * Parsed file information (internal use)
@@ -132,6 +142,7 @@ export interface ParsedFile {
     implements?: ImplementInfo[];
     renders?: RenderInfo[];
     hierarchy?: HierarchyInfo;
+    typeDefinitions?: TypeDefinition[];
 }
 /**
  * Import information extracted from a file
@@ -140,6 +151,18 @@ export interface ImportInfo {
     importPath: string;
     isTypeOnly: boolean;
     isDynamic: boolean;
+}
+/**
+ * Type definition extracted from a file
+ * Represents interface, type, class, or enum declarations
+ */
+export interface TypeDefinition {
+    kind: 'interface' | 'type' | 'class' | 'enum';
+    name: string;
+    isExported: boolean;
+    extends?: string[];
+    implements?: string[];
+    references?: string[];
 }
 /**
  * Implement information extracted from a file (Phase 3)
@@ -166,10 +189,45 @@ export interface RenderInfo {
  */
 export type EdgeType = 'import' | 'implement' | 'render';
 /**
+ * View mode for graph filtering (Phase 6)
+ * - global: Show complete graph (default)
+ * - focused: Show only dependencies within specified module/file
+ * - neighbors: Show focus node + direct dependents
+ */
+export type ViewMode = 'global' | 'focused' | 'neighbors';
+/**
  * Options for getDependencyGraph
  */
 export interface GetDependencyGraphOptions {
-    level?: 'file' | 'component' | 'module';
+    level?: 'file' | 'component' | 'module' | 'architecture' | 'interface';
     edgeTypes?: EdgeType[];
+    mode?: ViewMode;
+    focusPath?: string;
+    neighborDepth?: number;
+    internalLevel?: 'file' | 'interface';
+}
+/**
+ * File changes for diff analysis (Phase 5)
+ */
+export interface FileChanges {
+    added: string[];
+    modified: string[];
+    removed: string[];
+}
+/**
+ * Diff result showing graph changes (Phase 5)
+ */
+export interface DiffResult {
+    added: Graph;
+    removed: Graph;
+    modified: Graph;
+    summary: {
+        addedNodes: number;
+        removedNodes: number;
+        addedEdges: number;
+        removedEdges: number;
+        hasCircularDependency: boolean;
+        circularPaths?: string[][];
+    };
 }
 //# sourceMappingURL=types.d.ts.map

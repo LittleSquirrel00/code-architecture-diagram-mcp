@@ -45,7 +45,16 @@ export async function parseFile(filePath, _unusedParser) {
         // The parser parameter is ignored to ensure correctness
         const isTSXFile = filePath.endsWith('.tsx') || filePath.endsWith('.jsx');
         const fileParser = isTSXFile ? createTSXParser() : createTSParser();
-        const tree = fileParser.parse(content);
+        // Try to parse the full content first
+        let tree;
+        try {
+            tree = fileParser.parse(content);
+        }
+        catch (parseError) {
+            // If full parse fails (large file), use chunked parsing
+            console.warn(`[Parser] Full parse failed for ${filePath}, trying chunked parsing`);
+            return parseFileChunked(filePath, content, fileParser);
+        }
         const imports = extractImports(tree.rootNode);
         // Phase 2: Detect hierarchy from file path
         const hierarchy = detectHierarchy(filePath);
@@ -53,18 +62,96 @@ export async function parseFile(filePath, _unusedParser) {
         const implementations = extractImplements(tree.rootNode);
         // Phase 4: Extract JSX component renders
         const renders = extractRenders(tree.rootNode);
+        // Interface level: Extract type definitions
+        const typeDefinitions = extractTypeDefinitions(tree.rootNode);
         return {
             path: filePath,
             imports,
             implements: implementations.length > 0 ? implementations : undefined,
             renders: renders.length > 0 ? renders : undefined,
             hierarchy,
+            typeDefinitions: typeDefinitions.length > 0 ? typeDefinitions : undefined,
         };
     }
     catch (error) {
         console.warn(`[Parser] Failed to parse ${filePath}:`, error);
         return null;
     }
+}
+/**
+ * Parse large file in chunks to extract key information
+ *
+ * Strategy: Parse file in overlapping chunks, merge results
+ * Focus on extracting imports, exports, and type definitions
+ */
+function parseFileChunked(filePath, content, parser) {
+    const lines = content.split('\n');
+    const totalLines = lines.length;
+    const chunkSize = 800; // Lines per chunk (safe size for tree-sitter)
+    const overlap = 50; // Overlap to catch split statements
+    const allImports = [];
+    const allImplementations = [];
+    const allRenders = [];
+    const allTypeDefinitions = [];
+    const seenImports = new Set();
+    const seenImplements = new Set();
+    const seenRenders = new Set();
+    for (let start = 0; start < totalLines; start += chunkSize - overlap) {
+        const end = Math.min(start + chunkSize, totalLines);
+        const chunkContent = lines.slice(start, end).join('\n');
+        try {
+            const tree = parser.parse(chunkContent);
+            // Extract imports from this chunk
+            const imports = extractImports(tree.rootNode);
+            for (const imp of imports) {
+                const key = `${imp.importPath}:${imp.isTypeOnly}:${imp.isDynamic}`;
+                if (!seenImports.has(key)) {
+                    seenImports.add(key);
+                    allImports.push(imp);
+                }
+            }
+            // Extract implementations
+            const implementations = extractImplements(tree.rootNode);
+            for (const impl of implementations) {
+                const key = `${impl.className}:${impl.interfaces.join(',')}`;
+                if (!seenImplements.has(key)) {
+                    seenImplements.add(key);
+                    allImplementations.push(impl);
+                }
+            }
+            // Extract renders
+            const renders = extractRenders(tree.rootNode);
+            for (const render of renders) {
+                const key = `${render.componentName}:${render.position}`;
+                if (!seenRenders.has(key)) {
+                    seenRenders.add(key);
+                    allRenders.push(render);
+                }
+            }
+            // Extract type definitions
+            const typeDefinitions = extractTypeDefinitions(tree.rootNode);
+            for (const td of typeDefinitions) {
+                if (!allTypeDefinitions.some(t => t.name === td.name)) {
+                    allTypeDefinitions.push(td);
+                }
+            }
+        }
+        catch (chunkError) {
+            // Skip failed chunks, continue with others
+            console.warn(`[Parser] Chunk ${start}-${end} failed, skipping`);
+        }
+    }
+    console.log(`[Parser] Chunked parsing complete: ${allImports.length} imports, ` +
+        `${allTypeDefinitions.length} types from ${totalLines} lines`);
+    const hierarchy = detectHierarchy(filePath);
+    return {
+        path: filePath,
+        imports: allImports,
+        implements: allImplementations.length > 0 ? allImplementations : undefined,
+        renders: allRenders.length > 0 ? allRenders : undefined,
+        hierarchy,
+        typeDefinitions: allTypeDefinitions.length > 0 ? allTypeDefinitions : undefined,
+    };
 }
 /**
  * Extract import information from AST
@@ -458,6 +545,201 @@ function buildComponentImportMap(rootNode) {
     }
     traverse(rootNode);
     return map;
+}
+/**
+ * Extract type definitions from AST (interface level)
+ *
+ * Finds interface, type, class, and enum declarations
+ * @param rootNode - Root AST node
+ * @returns Array of type definitions
+ */
+function extractTypeDefinitions(rootNode) {
+    const definitions = [];
+    function traverse(node) {
+        if (!node)
+            return;
+        // interface_declaration: interface Foo { ... }
+        if (node.type === 'interface_declaration') {
+            const name = node.childForFieldName('name')?.text;
+            if (name) {
+                const isExported = hasExportModifier(node);
+                const extendsTypes = extractExtendsClause(node);
+                const references = extractInterfacePropertyTypes(node);
+                definitions.push({
+                    kind: 'interface',
+                    name,
+                    isExported,
+                    extends: extendsTypes.length > 0 ? extendsTypes : undefined,
+                    references: references.length > 0 ? references : undefined,
+                });
+            }
+        }
+        // type_alias_declaration: type Foo = { ... }
+        if (node.type === 'type_alias_declaration') {
+            const name = node.childForFieldName('name')?.text;
+            if (name) {
+                const isExported = hasExportModifier(node);
+                const references = extractTypeAliasReferences(node);
+                definitions.push({
+                    kind: 'type',
+                    name,
+                    isExported,
+                    references: references.length > 0 ? references : undefined,
+                });
+            }
+        }
+        // class_declaration: class Foo { ... }
+        if (node.type === 'class_declaration') {
+            const name = node.childForFieldName('name')?.text;
+            if (name) {
+                const isExported = hasExportModifier(node);
+                const extendsTypes = extractClassExtends(node);
+                const implementsTypes = extractInterfaceNames(node);
+                definitions.push({
+                    kind: 'class',
+                    name,
+                    isExported,
+                    extends: extendsTypes.length > 0 ? extendsTypes : undefined,
+                    implements: implementsTypes.length > 0 ? implementsTypes : undefined,
+                });
+            }
+        }
+        // enum_declaration: enum Foo { ... }
+        if (node.type === 'enum_declaration') {
+            const name = node.childForFieldName('name')?.text;
+            if (name) {
+                const isExported = hasExportModifier(node);
+                definitions.push({
+                    kind: 'enum',
+                    name,
+                    isExported,
+                });
+            }
+        }
+        // Traverse children
+        for (const child of node.children) {
+            if (child) {
+                traverse(child);
+            }
+        }
+    }
+    traverse(rootNode);
+    return definitions;
+}
+/**
+ * Check if a declaration has export modifier
+ */
+function hasExportModifier(node) {
+    // Check parent for export_statement
+    const parent = node.parent;
+    if (parent?.type === 'export_statement') {
+        return true;
+    }
+    // Check for export keyword in node
+    for (const child of node.children) {
+        if (child.type === 'export') {
+            return true;
+        }
+    }
+    return false;
+}
+/**
+ * Extract extends clause from interface declaration
+ */
+function extractExtendsClause(node) {
+    const types = [];
+    // Find extends_clause or extends_type_clause
+    for (const child of node.children) {
+        if (child.type === 'extends_type_clause' || child.type === 'extends_clause') {
+            for (const typeNode of child.namedChildren) {
+                if (typeNode.type === 'type_identifier') {
+                    types.push(typeNode.text);
+                }
+                else if (typeNode.type === 'generic_type') {
+                    const nameNode = typeNode.childForFieldName('name');
+                    if (nameNode?.type === 'type_identifier') {
+                        types.push(nameNode.text);
+                    }
+                }
+            }
+        }
+    }
+    return types;
+}
+/**
+ * Extract type references from interface property signatures
+ *
+ * Extracts all type_identifier nodes from interface body
+ * Example: interface Foo { bar: Bar, items: Baz[] } -> ['Bar', 'Baz']
+ */
+function extractInterfacePropertyTypes(node) {
+    const types = new Set();
+    // Find interface_body or object_type node
+    const body = node.children.find(c => c.type === 'interface_body' || c.type === 'object_type');
+    if (!body)
+        return [];
+    // Recursively collect all type_identifier nodes
+    function collectTypeIdentifiers(n) {
+        if (n.type === 'type_identifier') {
+            types.add(n.text);
+        }
+        for (const child of n.children) {
+            collectTypeIdentifiers(child);
+        }
+    }
+    collectTypeIdentifiers(body);
+    return Array.from(types);
+}
+/**
+ * Extract type references from type alias right-hand side
+ *
+ * Handles union types, intersection types, object types, etc.
+ * Example: type Foo = Bar | Baz -> ['Bar', 'Baz']
+ * Example: type Foo = { items: Bar[] } -> ['Bar']
+ */
+function extractTypeAliasReferences(node) {
+    const types = new Set();
+    // Get the value (right-hand side) of the type alias
+    const value = node.childForFieldName('value');
+    if (!value)
+        return [];
+    // Recursively collect all type_identifier nodes
+    function collectTypeIdentifiers(n) {
+        if (n.type === 'type_identifier') {
+            types.add(n.text);
+        }
+        for (const child of n.children) {
+            collectTypeIdentifiers(child);
+        }
+    }
+    collectTypeIdentifiers(value);
+    return Array.from(types);
+}
+/**
+ * Extract extends clause from class declaration
+ */
+function extractClassExtends(node) {
+    const types = [];
+    // Find class_heritage
+    const heritage = node.children.find(c => c.type === 'class_heritage');
+    if (!heritage)
+        return types;
+    // Find extends_clause
+    const extendsClause = heritage.children.find(c => c.type === 'extends_clause');
+    if (!extendsClause)
+        return types;
+    for (const child of extendsClause.namedChildren) {
+        if (child.type === 'identifier') {
+            types.push(child.text);
+        }
+        else if (child.type === 'generic_type') {
+            const nameNode = child.childForFieldName('name');
+            if (nameNode) {
+                types.push(nameNode.text);
+            }
+        }
+    }
+    return types;
 }
 /**
  * Parse all files in a project directory
