@@ -34,7 +34,9 @@ let pathAliasCache: Map<string, string> | null = null
 /**
  * Load path aliases from tsconfig.json or jsconfig.json
  *
- * @param projectPath - Project root directory
+ * Searches upward from projectPath to find config file (like .git search).
+ *
+ * @param projectPath - Starting directory (usually source directory)
  * @returns Map of alias patterns to base paths
  */
 function loadPathAliases(projectPath: string): Map<string, string> {
@@ -47,47 +49,70 @@ function loadPathAliases(projectPath: string): Map<string, string> {
   // Try tsconfig.json first, then jsconfig.json
   const configFiles = ['tsconfig.json', 'jsconfig.json']
 
-  for (const configFile of configFiles) {
-    const configPath = path.join(projectPath, configFile)
-    if (!fs.existsSync(configPath)) continue
+  // Search upward from projectPath to find config file
+  let currentDir = path.resolve(projectPath)
+  const maxDepth = 10 // Prevent infinite loop
+  let depth = 0
 
-    try {
-      const content = fs.readFileSync(configPath, 'utf-8')
-      // Simple JSON parse (ignoring comments for now)
-      const config = JSON.parse(content.replace(/\/\/.*$/gm, ''))
+  while (depth < maxDepth) {
+    for (const configFile of configFiles) {
+      const configPath = path.join(currentDir, configFile)
 
-      const paths = config.compilerOptions?.paths
-      const baseUrl = config.compilerOptions?.baseUrl || '.'
-
-      if (paths) {
-        for (const [pattern, targets] of Object.entries(paths)) {
-          // Convert glob pattern to simple prefix match
-          // "@/*" -> "@/"
-          // "~/*" -> "~/"
-          const prefix = pattern.replace(/\/\*$/, '/')
-
-          // Take first target path
-          const targetPattern = (targets as string[])[0]
-          if (!targetPattern) continue
-
-          // Resolve target relative to baseUrl
-          // "./src/*" -> "/absolute/path/to/src"
-          const targetPath = targetPattern.replace(/\/\*$/, '')
-          const absoluteTarget = path.resolve(projectPath, baseUrl, targetPath)
-
-          aliases.set(prefix, absoluteTarget)
-        }
-
-        console.log(`[PathAlias] Loaded ${aliases.size} path aliases from ${configFile}`)
-        for (const [prefix, target] of aliases) {
-          console.log(`  ${prefix} -> ${target}`)
-        }
-        break
+      if (!fs.existsSync(configPath)) {
+        continue
       }
-    } catch (error) {
-      console.warn(`[PathAlias] Failed to parse ${configFile}:`, error)
+
+      try {
+        const content = fs.readFileSync(configPath, 'utf-8')
+        // Simple JSON parse (ignoring comments for now)
+        const config = JSON.parse(content.replace(/\/\/.*$/gm, ''))
+
+        const paths = config.compilerOptions?.paths
+        const baseUrl = config.compilerOptions?.baseUrl || '.'
+
+        if (paths) {
+          for (const [pattern, targets] of Object.entries(paths)) {
+            // Convert glob pattern to simple prefix match
+            // "@/*" -> "@/"
+            // "~/*" -> "~/"
+            const prefix = pattern.replace(/\/\*$/, '/')
+
+            // Take first target path
+            const targetPattern = (targets as string[])[0]
+            if (!targetPattern) {
+              continue
+            }
+
+            // Resolve target relative to config file directory + baseUrl
+            // "./src/*" -> "/absolute/path/to/web/src"
+            const targetPath = targetPattern.replace(/\/\*$/, '')
+            const absoluteTarget = path.resolve(currentDir, baseUrl, targetPath)
+
+            aliases.set(prefix, absoluteTarget)
+          }
+
+          console.log(`[PathAlias] ✅ Loaded ${aliases.size} aliases from ${configPath}`)
+          pathAliasCache = aliases
+          return aliases
+        }
+      } catch (error) {
+        console.warn(`[PathAlias] Failed to parse ${configPath}:`, error)
+      }
     }
+
+    // Move to parent directory
+    const parentDir = path.dirname(currentDir)
+
+    // Stop if we reached the root
+    if (parentDir === currentDir) {
+      break
+    }
+
+    currentDir = parentDir
+    depth++
   }
+
+  console.warn(`[PathAlias] ⚠️ No tsconfig.json found (searched ${depth} levels from ${projectPath})`)
 
   pathAliasCache = aliases
   return aliases
@@ -496,13 +521,34 @@ function buildHierarchyGraph(
   const parentNodes = new Map<string, HierarchyNode>()
   const fileToParent = new Map<string, string>()
 
+  // Debug statistics
+  const debugStats = {
+    totalFiles: files.length,
+    filesWithParent: 0,
+    filesWithoutParent: 0,
+    totalImports: 0,
+    resolvedImports: 0,
+    unresolvedImports: 0,
+    skippedNoFromParent: 0,
+    skippedNoToParent: 0,
+    skippedIntraModule: 0,
+    edgesCreated: 0,
+    unresolvedPaths: new Map<string, number>(),
+    filesWithoutParentList: [] as string[],
+  }
+
   // Step 1: Detect hierarchy for each file and create parent nodes
   for (const file of files) {
     const hierarchy = detectHierarchy(file.path)
     const key = extractHierarchyKey(hierarchy, level)
 
-    if (!key) continue
+    if (!key) {
+      debugStats.filesWithoutParent++
+      debugStats.filesWithoutParentList.push(file.path)
+      continue
+    }
 
+    debugStats.filesWithParent++
     const parentId = `${level}:${key}`
     fileToParent.set(file.path, parentId)
 
@@ -526,41 +572,104 @@ function buildHierarchyGraph(
     const fromParent = fileToParent.get(file.path)
 
     for (const imp of file.imports) {
+      debugStats.totalImports++
+
       const resolvedPath = resolveImportPath(
         file.path,
         imp.importPath,
         filePathMap,
         projectPath
       )
-      if (!resolvedPath) continue
 
+      if (!resolvedPath) {
+        debugStats.unresolvedImports++
+        const count = debugStats.unresolvedPaths.get(imp.importPath) || 0
+        debugStats.unresolvedPaths.set(imp.importPath, count + 1)
+        continue
+      }
+
+      debugStats.resolvedImports++
       const toParent = fileToParent.get(resolvedPath)
 
-      // If both files have parents at the requested level, create aggregated edge
-      if (fromParent && toParent) {
-        // Skip intra-module/component edges
-        if (fromParent === toParent) continue
+      // Check if fromParent exists
+      if (!fromParent) {
+        debugStats.skippedNoFromParent++
+        continue
+      }
 
-        const edgeKey = `${fromParent}->${toParent}`
-        if (!aggregatedEdges.has(edgeKey)) {
-          const edge: ImportEdge = {
-            type: 'import',
-            from: fromParent,
-            to: toParent,
-            status: 'normal',
-          }
-          aggregatedEdges.set(edgeKey, edge)
+      // Check if toParent exists
+      if (!toParent) {
+        debugStats.skippedNoToParent++
+        continue
+      }
+
+      // Skip intra-module/component edges
+      if (fromParent === toParent) {
+        debugStats.skippedIntraModule++
+        continue
+      }
+
+      const edgeKey = `${fromParent}->${toParent}`
+      if (!aggregatedEdges.has(edgeKey)) {
+        const edge: ImportEdge = {
+          type: 'import',
+          from: fromParent,
+          to: toParent,
+          status: 'normal',
         }
+        aggregatedEdges.set(edgeKey, edge)
+        debugStats.edgesCreated++
       }
     }
   }
 
-  const nodeCount = parentNodes.size
-  const fileCount = files.length
-  const edgeCount = aggregatedEdges.size
-  console.log(
-    `[GraphBuilder] Aggregated ${fileCount} files into ${nodeCount} ${level} nodes with ${edgeCount} edges`
-  )
+  // Output diagnostic report
+  console.log(`\n[GraphBuilder] Hierarchy Graph Diagnostic Report (${level} level):`)
+  console.log(`  Total files: ${debugStats.totalFiles}`)
+  console.log(`  Files with parent: ${debugStats.filesWithParent}`)
+  console.log(`  Files without parent: ${debugStats.filesWithoutParent}`)
+  console.log(`  Total imports: ${debugStats.totalImports}`)
+  console.log(`  Resolved imports: ${debugStats.resolvedImports}`)
+  console.log(`  Unresolved imports: ${debugStats.unresolvedImports}`)
+  console.log(`  Skipped (no fromParent): ${debugStats.skippedNoFromParent}`)
+  console.log(`  Skipped (no toParent): ${debugStats.skippedNoToParent}`)
+  console.log(`  Skipped (intra-module): ${debugStats.skippedIntraModule}`)
+  console.log(`  Edges created: ${debugStats.edgesCreated}`)
+  console.log(`  Nodes created: ${parentNodes.size}`)
+
+  if (debugStats.filesWithoutParent > 0) {
+    console.log(`\n  Files without parent (first 5):`)
+    for (const filePath of debugStats.filesWithoutParentList.slice(0, 5)) {
+      console.log(`    - ${filePath}`)
+    }
+  }
+
+  if (debugStats.unresolvedPaths.size > 0) {
+    console.log(`\n  Top 10 unresolved import paths:`)
+    const sorted = Array.from(debugStats.unresolvedPaths.entries())
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 10)
+
+    for (const [importPath, count] of sorted) {
+      console.log(`    ${importPath}: ${count} times`)
+    }
+  }
+
+  // Validate graph integrity
+  const isolatedNodes = Array.from(parentNodes.values()).filter(node => {
+    const hasOutEdge = Array.from(aggregatedEdges.values()).some(edge => edge.from === node.id)
+    const hasInEdge = Array.from(aggregatedEdges.values()).some(edge => edge.to === node.id)
+    return !hasOutEdge && !hasInEdge
+  })
+
+  if (isolatedNodes.length > 0) {
+    console.log(`\n  ⚠️  WARNING: Found ${isolatedNodes.length} isolated nodes (no connections):`)
+    for (const node of isolatedNodes.slice(0, 10)) {
+      console.log(`    - ${node.path}`)
+    }
+  }
+
+  console.log(``)
 
   // Return only parent nodes (architecture/modules/components), not file nodes
   // This provides a clean hierarchical view at the requested level
@@ -725,7 +834,7 @@ export function resolveImportPath(
   filePathMap: Map<string, string>,
   projectPath?: string
 ): string | null {
-  let resolved: string
+  let resolved: string | undefined = undefined
 
   // Check if this is a path alias (e.g., @/*, ~/*)
   if (projectPath && !importPath.startsWith('.') && !importPath.startsWith('/')) {
@@ -743,7 +852,7 @@ export function resolveImportPath(
     }
 
     // If no alias matched, this is an external package
-    if (!resolved!) {
+    if (resolved === undefined) {
       return null
     }
   } else if (importPath.startsWith('.') || importPath.startsWith('/')) {
@@ -757,6 +866,9 @@ export function resolveImportPath(
     return null
   }
 
+  // Normalize the resolved path
+  resolved = path.normalize(resolved)
+
   // Try to find the file in our file path map
   // First try exact match
   if (filePathMap.has(resolved)) {
@@ -764,7 +876,7 @@ export function resolveImportPath(
   }
 
   // Try with common extensions
-  const extensions = ['', '.ts', '.tsx', '.js', '.jsx', '.mts', '.cts', '/index.ts', '/index.js']
+  const extensions = ['', '.ts', '.tsx', '.js', '.jsx', '.mts', '.cts', '/index.ts', '/index.tsx', '/index.js']
   for (const ext of extensions) {
     const candidate = resolved + ext
     if (filePathMap.has(candidate)) {
